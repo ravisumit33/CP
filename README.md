@@ -1,0 +1,1 @@
+[Neovim](https://neovim.io/) setup for competitive programming using [LazyVim](https://www.lazyvim.org/). Automatic template creation using [competitest.nvim](https://github.com/xeluxee/competitest.nvim). Neovim commands for build and debug using `g++` & debug adapter protocol (`dap`).
