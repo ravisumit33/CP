@@ -18,49 +18,78 @@ local function compile_and_debug()
 		.. escaped_outname
 		.. "'"
 
-	print("Compiling: " .. outname)
-	print("Command: " .. compile_cmd)
-
-	-- Execute the compilation command
-	local result = vim.fn.system(compile_cmd)
-
-	if vim.v.shell_error ~= 0 then
-		print("Compilation failed:\n" .. result)
-		return
-	end
-
-	-- Terminate any existing debugging session
-	local current_session = dap.session()
-	if current_session then
-		print("Terminating existing debugging session...")
-		dap.terminate()
-		-- Wait for the session to terminate
-		vim.wait(1000, function()
-			return not dap.session()
-		end)
-		print("Existing session terminated.")
-	end
-
-	-- Define the debug configuration
-	local debug_config = {
-		name = "Debug " .. filename,
-		type = "codelldb",
-		request = "launch",
-		program = outname,
-		cwd = filedir,
-		stopOnEntry = false,
-		setupCommands = {
-			{
-				text = "-enable-pretty-printing",
-				description = "Enable pretty printing",
-				ignoreFailures = false,
-			},
-		},
+	local compile_args = {
+		"-Wall",
+		"-Wextra",
+		"-g",
+		"-std=c++23",
+		"-DDEBUG_ENV",
+		"-I",
+		".",
+		escaped_filepath,
+		"-o",
+		escaped_outname,
 	}
 
-	-- Run the debug configuration
-	print("Starting new debugging session...")
-	dap.run(debug_config)
+	local build_msg_id = "cpp_build_" .. escaped_filename
+
+	-- 1. Create a notification handle
+	local notification =
+		vim.notify("Building " .. escaped_filename .. "with command: " .. compile_cmd, vim.log.levels.INFO, {
+			title = "C++ Build",
+			id = build_msg_id,
+			keep = function()
+				return true
+			end, -- Keeps it visible until replaced
+		})
+
+	-- Execute the compilation command
+	vim.system({ "g++-14", unpack(compile_args) }, { text = true }, function(obj)
+		vim.schedule(function()
+			if obj.code ~= 0 then
+				-- Update notification to Error
+				vim.notify("Compilation failed!\n" .. (obj.stderr or ""), vim.log.levels.ERROR, {
+					title = "C++ Build",
+					id = build_msg_id,
+				})
+				return
+			end
+
+			-- Update notification to Success
+			vim.notify("Build successful. Starting debugger...", vim.log.levels.INFO, {
+				title = "C++ Build",
+				id = build_msg_id,
+				timeout = 2000,
+			})
+
+			-- Terminate any existing debugging session
+			local current_session = dap.session()
+			if current_session then
+				dap.terminate()
+				-- Wait for the session to terminate
+				vim.wait(1000, function()
+					return not dap.session()
+				end)
+			end
+
+			-- 4. Launch DAP
+			dap.run({
+				name = "Debug " .. filename,
+				type = "codelldb",
+				request = "launch",
+				program = outname,
+				cwd = filedir,
+				stopOnEntry = false,
+				setupCommands = {
+					{
+						text = "-enable-pretty-printing",
+						description = "Enable pretty printing",
+						ignoreFailures = false,
+					},
+				},
+			})
+		end)
+	end)
 end
 
 -- Create a command that runs the function
